@@ -1,4 +1,13 @@
-name: Stock Market Alert
+- name: Commit and push status
+  env:
+    GH_TOKEN: ${{ secrets.PUSH_TOKEN }}  # 使用PAT
+  run: |
+    git config --global user.name "GitHub Actions Bot"
+    git config --global user.email "actions-bot@users.noreply.github.com"
+    git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+    git add push_state.json
+    git diff --quiet && git diff --cached --quiet || git commit -m "Update push status [skip ci]"
+    git push
 
 on:
   schedule:
