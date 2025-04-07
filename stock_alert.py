@@ -9,7 +9,7 @@ TENCENT_STOCK_API = 'http://qt.gtimg.cn/q=sh000001'
 TRIGGER_PERCENT = 1.5
 
 def get_shanghai_index():
-    """从腾讯接口获取上证指数并计算涨跌幅"""
+    """从腾讯接口获取上证指数并计算涨跌幅和当前点位"""
     try:
         response = requests.get(TENCENT_STOCK_API, timeout=10)
         response.raise_for_status()
@@ -25,7 +25,10 @@ def get_shanghai_index():
         
         # 计算涨跌幅百分比
         change_percent = (current_price - prev_close) / prev_close * 100
-        return round(change_percent, 2)
+        return {
+            'current_price': current_price,
+            'change_percent': round(change_percent, 2)
+        }
     except (IndexError, ValueError) as e:
         print(f"[{datetime.now()}] 数据解析失败: {str(e)}")
         return None
@@ -33,11 +36,18 @@ def get_shanghai_index():
         print(f"[{datetime.now()}] 获取数据失败: {str(e)}")
         return None
 
-def send_notification(percent):
+def send_notification(stock_data):
     """通过PushDeer发送通知"""
     try:
+        percent = stock_data['change_percent']
+        current_price = stock_data['current_price']
+        
         direction = "涨" if percent > 0 else "跌"
-        message = f"⚠️ 上证指数{direction}幅警报！当前：{percent}%"
+        message = (
+            f"⚠️ 上证指数{direction}幅警报！\n"
+            f"当前点位：{current_price}\n"
+            f"涨跌幅：{percent}%"
+        )
         encoded_msg = quote_plus(message)
         url = f"https://api2.pushdeer.com/message/push?pushkey={PUSHDEER_PUSHKEY}&text={encoded_msg}"
         
@@ -49,10 +59,18 @@ def send_notification(percent):
 
 if __name__ == "__main__":
     print(f"[{datetime.now()}] 开始执行监控任务")
-    change_percent = get_shanghai_index()
+    stock_data = get_shanghai_index()
     
-    if change_percent is not None and abs(change_percent) >= TRIGGER_PERCENT:
-        print(f"[{datetime.now()}] 当前涨跌幅：{change_percent}%，触发通知")
-        send_notification(change_percent)
+    if stock_data is not None:
+        change_percent = stock_data['change_percent']
+        current_price = stock_data['current_price']
+        
+        print(f"[{datetime.now()}] 当前点位：{current_price}，涨跌幅：{change_percent}%")
+        
+        if abs(change_percent) >= TRIGGER_PERCENT:
+            print(f"[{datetime.now()}] 涨跌幅达到阈值，触发通知")
+            send_notification(stock_data)
+        else:
+            print(f"[{datetime.now()}] 涨跌幅未达阈值")
     else:
-        print(f"[{datetime.now()}] 当前涨跌幅：{change_percent or '未知'}%，未达阈值")
+        print(f"[{datetime.now()}] 获取数据失败")
