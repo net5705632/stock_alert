@@ -10,6 +10,7 @@ on:
     - cron: '0,30 5 * * 1-5'      # 13:00-13:30 CST (05:00-05:30 UTC)
     - cron: '0,30 6 * * 1-5'      # 14:00-14:30 CST (06:00-06:30 UTC)
     - cron: '0 7 * * 1-5'         # 15:00 CST (07:00 UTC)
+  workflow_dispatch:  # 添加这行以支持手动触发
 
 jobs:
   check-stock:
