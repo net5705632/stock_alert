@@ -1,76 +1,81 @@
 import os
 import requests
+import json
 from urllib.parse import quote_plus
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 配置参数
-PUSHDEER_PUSHKEY = os.environ.get('PUSHDEER_PUSHKEY')  # 从环境变量获取
+PUSHDEER_PUSHKEY = os.environ.get('PUSHDEER_PUSHKEY')
 TENCENT_STOCK_API = 'http://qt.gtimg.cn/q=sh000001'
 TRIGGER_PERCENT = 1.5
+STATE_FILE = 'push_state.json'  # 状态存储文件
 
 def get_shanghai_index():
-    """从腾讯接口获取上证指数并计算涨跌幅和当前点位"""
-    try:
-        response = requests.get(TENCENT_STOCK_API, timeout=10)
-        response.raise_for_status()
-        
-        # 解析返回数据
-        raw_data = response.text.split('="')[1].strip('"')
-        parts = raw_data.split('~')
-        print(f"[{datetime.now()}] 调试信息 - 原始字段:", parts)
-
-        # 核心字段索引
-        current_price = float(parts[3])  # 当前价
-        prev_close = float(parts[4])    # 昨收价
-        
-        # 计算涨跌幅百分比
-        change_percent = (current_price - prev_close) / prev_close * 100
-        return {
-            'current_price': current_price,
-            'change_percent': round(change_percent, 2)
-        }
-    except (IndexError, ValueError) as e:
-        print(f"[{datetime.now()}] 数据解析失败: {str(e)}")
-        return None
-    except Exception as e:
-        print(f"[{datetime.now()}] 获取数据失败: {str(e)}")
-        return None
+    """从腾讯接口获取上证指数数据"""
 
 def send_notification(stock_data):
-    """通过PushDeer发送通知"""
+    """发送推送通知"""
+
+def load_push_state():
+    """加载推送状态"""
     try:
-        percent = stock_data['change_percent']
-        current_price = stock_data['current_price']
-        
-        direction = "涨" if percent > 0 else "跌"
-        message = (
-            f"⚠️ 上证指数{direction}幅警报！\n"
-            f"当前点位：{current_price}\n"
-            f"涨跌幅：{percent}%"
-        )
-        encoded_msg = quote_plus(message)
-        url = f"https://api2.pushdeer.com/message/push?pushkey={PUSHDEER_PUSHKEY}&text={encoded_msg}"
-        
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        print(f"[{datetime.now()}] 通知发送成功")
-    except Exception as e:
-        print(f"[{datetime.now()}] 推送失败: {str(e)}")
+        with open(STATE_FILE, 'r') as f:
+            state = json.load(f)
+            # 转换字符串时间为datetime对象
+            state['last_push'] = datetime.fromisoformat(state['last_push']) if state['last_push'] else None
+            return state
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {'last_push': None, 'push_count': 0}
+
+def save_push_state(state):
+    """保存推送状态"""
+    # 转换datetime为字符串
+    state_to_save = {
+        'last_push': state['last_push'].isoformat() if state['last_push'] else None,
+        'push_count': state['push_count']
+    }
+    with open(STATE_FILE, 'w') as f:
+        json.dump(state_to_save, f)
+
+def should_send(current_time):
+    """判断是否需要发送通知"""
+    state = load_push_state()
+    
+    # 当天首次触发
+    if state['push_count'] == 0:
+        return True
+    
+    # 后续触发检查时间间隔
+    time_diff = current_time - state['last_push']
+    return time_diff >= timedelta(hours=1)
 
 if __name__ == "__main__":
     print(f"[{datetime.now()}] 开始执行监控任务")
+    current_time = datetime.now()
     stock_data = get_shanghai_index()
     
-    if stock_data is not None:
-        change_percent = stock_data['change_percent']
-        current_price = stock_data['current_price']
-        
-        print(f"[{datetime.now()}] 当前点位：{current_price}，涨跌幅：{change_percent}%")
-        
-        if abs(change_percent) >= TRIGGER_PERCENT:
-            print(f"[{datetime.now()}] 涨跌幅达到阈值，触发通知")
-            send_notification(stock_data)
-        else:
-            print(f"[{datetime.now()}] 涨跌幅未达阈值")
+    if stock_data is None:
+        print(f"[{current_time}] 获取数据失败")
+        exit()
+
+    change_percent = stock_data['change_percent']
+    current_price = stock_data['current_price']
+    print(f"[{current_time}] 当前点位：{current_price}，涨跌幅：{change_percent}%")
+
+    if abs(change_percent) < TRIGGER_PERCENT:
+        print(f"[{current_time}] 涨跌幅未达阈值")
+        exit()
+
+    state = load_push_state()
+    if should_send(current_time):
+        print(f"[{current_time}] 触发通知条件")
+        send_notification(stock_data)
+        # 更新状态
+        new_state = {
+            'last_push': current_time,
+            'push_count': state['push_count'] + 1
+        }
+        save_push_state(new_state)
     else:
-        print(f"[{datetime.now()}] 获取数据失败")
+        next_push = state['last_push'] + timedelta(hours=1)
+        print(f"[{current_time}] 已达今日推送上限，下次可推送时间：{next_push}")
