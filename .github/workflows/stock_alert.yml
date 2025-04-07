@@ -1,0 +1,33 @@
+name: Stock Market Alert
+
+on:
+  schedule:
+    # 北京时间 09:30-11:30（UTC+8 转 UTC 时间）
+    - cron: '30 1 * * 1-5'       # 09:30 CST (01:30 UTC)
+    - cron: '0,30 2 * * 1-5'      # 10:00-10:30 CST (02:00-02:30 UTC)
+    - cron: '0,30 3 * * 1-5'      # 11:00-11:30 CST (03:00-03:30 UTC)
+    # 北京时间 13:00-15:00（UTC+8 转 UTC 时间）
+    - cron: '0,30 5 * * 1-5'      # 13:00-13:30 CST (05:00-05:30 UTC)
+    - cron: '0,30 6 * * 1-5'      # 14:00-14:30 CST (06:00-06:30 UTC)
+    - cron: '0 7 * * 1-5'         # 15:00 CST (07:00 UTC)
+
+jobs:
+  check-stock:
+    runs-on: ubuntu-latest
+    env:
+      PUSHDEER_PUSHKEY: ${{ secrets.PUSHDEER_PUSHKEY }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: pip install requests
+
+    - name: Run stock monitor
+      run: python stock_alert.py
